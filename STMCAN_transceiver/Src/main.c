@@ -38,6 +38,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f4xx_hal.h"
+#include "stdlib.h"
+#include "string.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -60,6 +62,7 @@ static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
+void NVIC_Init(void);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -67,7 +70,27 @@ static void MX_USART2_UART_Init(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
+void EXTI9_5_IRQHandler (void)
+{
+	if(__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_6) != RESET)
+	{
+		// Lancer TIM1
+		__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_6);
+		HAL_GPIO_EXTI_Callback(GPIO_PIN_6);
+	}
+}
 
+void TIM1_UP_TIM10_IRQHandler(void)
+{
+	HAL_TIM_IRQHandler(&htim1);
+	HAL_GPIO_TogglePin(Output_GPIO_Port, Output_Pin);
+}
+
+void TIM2_IRQHandler(void)
+{
+	HAL_TIM_IRQHandler(&htim2);
+
+}
 /* USER CODE END 0 */
 
 int main(void)
@@ -99,8 +122,10 @@ int main(void)
   MX_TIM2_Init();
   MX_USART2_UART_Init();
 
-  /* USER CODE BEGIN 2 */
 
+  /* USER CODE BEGIN 2 */
+  NVIC_Init();
+  HAL_TIM_Base_Start_IT(&htim1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -110,7 +135,7 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-
+	  for(uint8_t i=0;i<200;i++);
   }
   /* USER CODE END 3 */
 
@@ -187,9 +212,9 @@ static void MX_TIM1_Init(void)
   TIM_MasterConfigTypeDef sMasterConfig;
 
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 0;
+  htim1.Init.Prescaler = 50000;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 0;
+  htim1.Init.Period = 100;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
@@ -316,6 +341,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+// Init NVIC
+void NVIC_Init(void)
+{
+	HAL_NVIC_SetPriority(EXTI9_5_IRQn,0,0);
+	HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+	HAL_NVIC_SetPriority(TIM1_UP_TIM10_IRQn,0,0);
+	HAL_NVIC_EnableIRQ(TIM1_UP_TIM10_IRQn);
+}
 
 /* USER CODE END 4 */
 
