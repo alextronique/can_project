@@ -54,6 +54,12 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
+// Tableau de test
+uint8_t tmpTab[TAILLE_MAX_STUFFED] =
+{		0xFB, 0x41, 0xDA, 0x1F, 0x01, 0xF2, 0xFF, 0x04, 0x1A, 0xC6,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+uint8_t newTab[TAILLE_MAX_UNSTUFFED];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,6 +69,7 @@ static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
 void NVIC_Init(void);
+uint8_t FrameDestuff(uint8_t frameCAN[TAILLE_MAX_STUFFED]);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -80,16 +87,18 @@ void EXTI9_5_IRQHandler (void)
 	}
 }
 
+/* Timer 1 interrupt @ 8us */
 void TIM1_UP_TIM10_IRQHandler(void)
 {
 	HAL_TIM_IRQHandler(&htim1);
-	HAL_GPIO_TogglePin(Output_GPIO_Port, Output_Pin);
+	HAL_GPIO_TogglePin(PORTC, PC5);
 }
 
+/* Timer 2 interrupt @ 3us */
 void TIM2_IRQHandler(void)
 {
 	HAL_TIM_IRQHandler(&htim2);
-
+	HAL_GPIO_TogglePin(PORTC, PC8);
 }
 /* USER CODE END 0 */
 
@@ -97,7 +106,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+	//uint8_t tmpTest[TAILLE_MAX_STUFFED] = {0};
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -124,18 +133,23 @@ int main(void)
 
 
   /* USER CODE BEGIN 2 */
-  NVIC_Init();
-  HAL_TIM_Base_Start_IT(&htim1);
+  //NVIC_Init();
+  //HAL_TIM_Base_Start_IT(&htim1);
+  //HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  FrameDestuff(tmpTab);
+  //tmpTest = newTab;
+
   while (1)
   {
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-	  for(uint8_t i=0;i<200;i++);
+	  ;;
   }
   /* USER CODE END 3 */
 
@@ -212,9 +226,9 @@ static void MX_TIM1_Init(void)
   TIM_MasterConfigTypeDef sMasterConfig;
 
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 50000;
+  htim1.Init.Prescaler = 130;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 100;
+  htim1.Init.Period = 10;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
@@ -245,9 +259,9 @@ static void MX_TIM2_Init(void)
   TIM_MasterConfigTypeDef sMasterConfig;
 
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
+  htim2.Init.Prescaler = 130;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 0;
+  htim2.Init.Period = 4;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
@@ -310,7 +324,8 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Output_GPIO_Port, Output_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(PORTC, PC5, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(PORTC, PC8, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -325,22 +340,96 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Output_Pin */
-  GPIO_InitStruct.Pin = Output_Pin;
+  /*Configure GPIO pin : PC8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Output_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Input_Pin */
-  GPIO_InitStruct.Pin = Input_Pin;
+  /*Configure GPIO pin : PC5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(Input_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
+
+// Fonction permettant de récupérer un tableau de char provenant
+// de l'échantillonnage, ou les bits sont rangés à la volée
+// On veut déstuffer cette trame, afin de l'identifier comme
+// valide ou non, et trier les données
+uint8_t FrameDestuff(uint8_t frameCAN[])
+{
+	// Pour gérer le destuffing, on a besoin d'un compteur
+	// On incrémente ce compteur à chaque fois que le bit n+1
+	// est de même valeur que le bit n. On le reset lorsqu'ils
+	// sont différents
+	uint8_t cptStuffing = 0;
+	uint8_t bitPre = -1;
+	uint8_t stock = 1;
+	uint8_t cptChar = 0;
+	uint8_t cptBit = 0;
+	//uint8_t newTab[TAILLE_MAX_UNSTUFFED];
+
+	for (uint8_t i=0 ; i < TAILLE_MAX_STUFFED ; i++)
+	{
+		for (uint8_t j=0 ; j < 8 ; j++)
+		{
+			// Mise en place d'un compteur pour les bits de même valeur
+			// Permet de faire le destuffing
+			if (bitPre == (frameCAN[i] & (0b10000000 >> j)) >> (7-j))
+				cptStuffing++;
+			else
+				cptStuffing=0;
+
+			if (stock)
+			{
+				if (j>cptBit)
+					newTab[cptChar] |= ((frameCAN[i] & (0b10000000 >> j)) << (abs(j-cptBit)));
+				else
+					newTab[cptChar] |= ((frameCAN[i] & (0b10000000 >> j)) >> (abs(j-cptBit)));
+
+				if(cptBit == 7)
+				{
+					cptChar++;
+					cptBit = 0;
+				}
+				else
+					cptBit++;
+			}
+
+
+			// Test sur le compteur du stuffing
+			if (cptStuffing == 4)
+				stock = 0; // Prochaine valeur = bitstuffing -> on ne la conserve pas
+			else
+				stock = 1;
+
+			bitPre = ((frameCAN[i] & (0b10000000 >> j)) >> (7-j));
+		}
+	}
+	// On retourne quoi ?! Soit le tableau "valide", soit un
+	return 0;
+}
+
+void FrameRead(uint8_t tab)
+{
+
+}
+
+// FrameStuffing()
+
+// FrameDestuffing()
 
 // Init NVIC
 void NVIC_Init(void)
@@ -349,6 +438,8 @@ void NVIC_Init(void)
 	HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 	HAL_NVIC_SetPriority(TIM1_UP_TIM10_IRQn,0,0);
 	HAL_NVIC_EnableIRQ(TIM1_UP_TIM10_IRQn);
+	HAL_NVIC_SetPriority(TIM2_IRQn,0,0);
+	HAL_NVIC_EnableIRQ(TIM2_IRQn);
 }
 
 /* USER CODE END 4 */

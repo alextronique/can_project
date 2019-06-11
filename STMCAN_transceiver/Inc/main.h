@@ -54,10 +54,10 @@
 #define USART_RX_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
-#define Output_Pin GPIO_PIN_5
-#define Output_GPIO_Port GPIOC
-#define Input_Pin GPIO_PIN_6
-#define Input_GPIO_Port GPIOC
+#define PC6	GPIO_PIN_6
+#define PC5	GPIO_PIN_5
+#define PC8	GPIO_PIN_8
+#define PORTC GPIOC
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
@@ -66,6 +66,34 @@
 #define SWO_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
+
+// Tableau de char final (destuffé)
+#define TAILLE_MAX_STUFFED		17
+#define TAILLE_MAX_UNSTUFFED	13
+
+// Définition des masques
+#define SOF		0x80	// Case 0
+#define ID0		0x7F	// Case 0
+#define ID1		0xF0	// Case 1
+#define RTR		0x08	// Case 1
+#define R0		0x04	// Case 1
+#define R1		0x02	// Case 1
+#define DLC0	0x01	// Case 1
+#define DLC1	0xE0	// Case 2
+
+/*#define DATA0	0x1F	// Case 2
+#define DATA1	0xFF	// Case 3
+#define DATA2	0xFF	// Case 4
+#define DATA3	0xFF	// Case 5
+#define DATA4	0xFF	// Case 6
+#define DATA5	0xFF	// Case 7
+#define DATA6	0xFF	// Case 8
+#define DATA7	0xFF	// Case 9
+#define DATA8	0xE0	// Case 10
+#define CRC0
+#define CRC1
+#define CRC2
+#define ACK*/
 
 /* USER CODE END Private defines */
 
