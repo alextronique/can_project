@@ -41,7 +41,10 @@
   /* Includes ------------------------------------------------------------------*/
 
 /* USER CODE BEGIN Includes */
-
+#include "stm32f4xx_hal.h"
+#include "stdlib.h"
+#include "string.h"
+#include "stdint.h"
 /* USER CODE END Includes */
 
 /* Private define ------------------------------------------------------------*/
@@ -69,17 +72,17 @@
 
 // Tableau de char final (destuffé)
 #define TAILLE_MAX_STUFFED		17
-#define TAILLE_MAX_UNSTUFFED	13
+#define TAILLE_MAX_UNSTUFFED	14
 
 // Définition des masques
-#define SOF		0x80	// Case 0
-#define ID0		0x7F	// Case 0
-#define ID1		0xF0	// Case 1
-#define RTR		0x08	// Case 1
-#define R0		0x04	// Case 1
-#define R1		0x02	// Case 1
-#define DLC0	0x01	// Case 1
-#define DLC1	0xE0	// Case 2
+#define M_SOF		0x80	// Case 0
+#define M_ID0		0x7F	// Case 0
+#define M_ID1		0xF0	// Case 1
+#define M_RTR		0x08	// Case 1
+#define M_R0		0x04	// Case 1
+#define M_R1		0x02	// Case 1
+#define M_DLC0	0x01	// Case 1
+#define M_DLC1	0xE0	// Case 2
 
 /*#define DATA0	0x1F	// Case 2
 #define DATA1	0xFF	// Case 3
@@ -94,6 +97,77 @@
 #define CRC1
 #define CRC2
 #define ACK*/
+
+#define STUFFING_ERROR 	0x01
+#define ACK_ERROR		0x02
+#define FORM_ERROR		0x04
+#define BIT_ERROR		0x08
+#define CRC_ERROR		0x10
+
+#define FLAG_TXE		0x00000080
+
+
+/**/
+#define __PACKED
+
+typedef union
+{
+	uint8_t frame_tab[TAILLE_MAX_UNSTUFFED] __PACKED;
+//	uint8_t v[17] __PACKED;
+
+	struct __PACKED
+	{
+		uint8_t ID_H : 7;
+		uint8_t SOF : 1;
+
+		uint8_t DLCH : 1;
+		uint8_t R1 : 1;
+		uint8_t R0 : 1;
+		uint8_t RTR : 1;
+		uint8_t ID_L : 4;
+
+		uint8_t DATA1H : 5;
+		uint8_t DLCL : 3;
+
+		uint8_t DATA2H : 5;
+		uint8_t DATA1L : 3;
+
+		uint8_t DATA3H : 5;
+		uint8_t DATA2L : 3;
+
+		uint8_t DATA4H : 5;
+		uint8_t DATA3L : 3;
+
+		uint8_t DATA5H : 5;
+		uint8_t DATA4L : 3;
+
+		uint8_t DATA6H : 5;
+		uint8_t DATA5L : 3;
+
+		uint8_t DATA7H : 5;
+		uint8_t DATA6L : 3;
+
+		uint8_t DATA8H : 5;
+		uint8_t DATA7L : 3;
+
+		uint8_t CRC_1 : 5;
+		uint8_t DATA8L : 3;
+
+		uint8_t CRC_3 : 5;
+		uint8_t CRC_2 : 3;
+
+		uint8_t END_OF_FRAME_H : 3;
+		uint8_t ACK : 2;
+		uint8_t CRC_4 : 3;
+
+		uint8_t NUL : 1;
+		uint8_t INTER : 3;
+		uint8_t END_OF_FRAME_L : 4;
+	} bits;
+
+} frame_t;
+
+ /* */
 
 /* USER CODE END Private defines */
 

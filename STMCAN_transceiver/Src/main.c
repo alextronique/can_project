@@ -37,9 +37,7 @@
   */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stm32f4xx_hal.h"
-#include "stdlib.h"
-#include "string.h"
+
 
 /* USER CODE BEGIN Includes */
 
@@ -53,13 +51,10 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+/*
 
-// Tableau de test
-uint8_t tmpTab[TAILLE_MAX_STUFFED] =
-{		0xFB, 0x41, 0xDA, 0x1F, 0x01, 0xF2, 0xFF, 0x04, 0x1A, 0xC6,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-uint8_t newTab[TAILLE_MAX_UNSTUFFED];
+uint8_t newTab[²];*/
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,11 +64,15 @@ static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
 void NVIC_Init(void);
-uint8_t FrameDestuff(uint8_t frameCAN[TAILLE_MAX_STUFFED]);
+
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
-
+uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab);
+uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct);
+void ErrorManagement(frame_t * frameStruct, uint8_t errorreport, UART_HandleTypeDef huart);
+void UART_SendChar(UART_HandleTypeDef huart, uint8_t data);
+void UART_SendString(UART_HandleTypeDef huart, char *p);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -106,7 +105,38 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	//uint8_t tmpTest[TAILLE_MAX_STUFFED] = {0};
+  /* Private variables ----------------------------------------------------------*/
+	// Structure de la trame
+	static frame_t frameStruct;
+
+	// Tableau de test
+	uint8_t tmpTab[TAILLE_MAX_STUFFED] =
+	{		0xFB, 0x41, 0xDA, 0x1F, 0x01, 0xF2, 0xFF, 0x04, 0x1A, 0xC6,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+
+	//Trame sans erreur de stuffing
+
+
+	//Trame avec erreur de stuffing - 6bits de même valeur a la suite
+	uint8_t tmpTab2[TAILLE_MAX_STUFFED] =
+	{		0x9F, 0x51, 0x50, 0x77, 0xF2, 0xDC, 0xDF, 0x14, 0x79, 0xF1,
+			0x0A, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	//Trame avec erreur de forme
+
+	//Trame avec erreur de bit
+
+	//Trame avec erreur de CRC
+
+	uint8_t errorReport = 0;
+
+	uint8_t tmp=0;
+
+	// Tableau destuffé
+	static uint8_t unstuffTab[TAILLE_MAX_UNSTUFFED] = {0};
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -140,9 +170,17 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  UART_SendString(huart2, "Demarrage du sniffing CAN");
 
-  FrameDestuff(tmpTab);
-  //tmpTest = newTab;
+
+  errorReport |= FrameDestuff(tmpTab2, unstuffTab);
+  errorReport |= FrameRead(unstuffTab, &frameStruct);
+
+
+  tmp++;
+
+  // Gestion des erreurs
+  // Lecture des "return" avec masques
 
   while (1)
   {
@@ -292,7 +330,7 @@ static void MX_USART2_UART_Init(void)
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.Mode = UART_MODE_TX;
   huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart2) != HAL_OK)
@@ -364,41 +402,107 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-// Fonction permettant de récupérer un tableau de char provenant
-// de l'échantillonnage, ou les bits sont rangés à la volée
-// On veut déstuffer cette trame, afin de l'identifier comme
-// valide ou non, et trier les données
-uint8_t FrameDestuff(uint8_t frameCAN[])
+
+
+/* _____________________________________________________________________________________________*/
+// Fonction permettant de récupérer un tableau de char provenant								//
+// de l'échantillonnage, ou les bits sont rangés à la volée										//
+// On veut déstuffer cette trame, afin de l'identifier comme									//
+// valide ou non, et trier les données															//
+uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 {
 	// Pour gérer le destuffing, on a besoin d'un compteur
 	// On incrémente ce compteur à chaque fois que le bit n+1
 	// est de même valeur que le bit n. On le reset lorsqu'ils
 	// sont différents
 	uint8_t cptStuffing = 0;
-	uint8_t bitPre = -1;
-	uint8_t stock = 1;
-	uint8_t cptChar = 0;
-	uint8_t cptBit = 0;
-	//uint8_t newTab[TAILLE_MAX_UNSTUFFED];
+	uint8_t bitPre = -1; 	// Stock la valeur du bit précédent, pour comparaison
+	uint8_t stock = 1;		// Indique si la prochaine valeur est a stocker ou a destuffer
+	uint8_t cptChar = 0;	// Compteur de caractères
+	uint8_t cptBit = 0;		// Compteur de bits
+	uint8_t ErrorReport = 0;// Rapport d'erreur
+	uint8_t dlcO = 0;
+	int k=0, l=0;
 
+
+
+	// On commence le destuffing
+	// Première boucle for pour parcourir les cases du tableau
 	for (uint8_t i=0 ; i < TAILLE_MAX_STUFFED ; i++)
 	{
+		// Deuxième boucle for pour parcourir chaque bits de la case
 		for (uint8_t j=0 ; j < 8 ; j++)
 		{
+			// Si on a déjà destuffé au moins le DLC
+			if( (cptChar == 2) && (cptBit==3) )
+				// Traitement DLC pour remplir la structure
+				dlcO = ((newTab[1] & M_DLC0) << 3) | ((newTab[2] & M_DLC1) >> 5);
+
+			// Puis si on dépasse la case du CRC
+			if (cptChar == ((6+dlcO)-2))
+			{
+				// Si on dépasse aussi le bit du CRC
+				if(cptBit == 2)
+				{
+					// On veut stocker les dernières cases du tableau de base dans le nouveau
+					// On refait un compteur qui repart de la case où on s'est arrêté de newTab
+					for(k=cptChar; k<((6+dlcO)+1); k++)
+					{
+						// Compteur de bit de newTab
+						for(l=0 ; l<8; l++)
+						{
+							// Le premier tour commence à cptBit, c'est le dernier bit de CRC
+							// Aux tours suivants, on reprend au bit 0
+							if(k==cptChar && l == 0)
+								l=cptBit;
+
+							if (j>l)
+								*(newTab+k) |= (( (*(frameCAN+i)) & (0b10000000 >> j)) << (abs(j-l)));
+							else
+								*(newTab+k) |= (( (*(frameCAN+i)) & (0b10000000 >> j)) >> (abs(j-l)));
+
+							//Incrémentation des compteurs du tableau de base
+							if(j>=7)
+							{
+								j=0;
+								i++;
+							}
+							else
+								j++;
+
+						}
+					}
+					// Sortie de la fonction
+					return ErrorReport;
+				}
+
+			}
+
 			// Mise en place d'un compteur pour les bits de même valeur
-			// Permet de faire le destuffing
-			if (bitPre == (frameCAN[i] & (0b10000000 >> j)) >> (7-j))
+			// Permet de faire le destuffing jusqu'au CRC, ensuite il n'y a plus de destuffing
+
+			// Si le bit précédent est de même valeur que le bit actuel
+			if (bitPre == (( (*(frameCAN+i)) ) & (0b10000000 >> j)) >> (7-j))
+			{
+				// Incrémentation du compteur de stuffing
 				cptStuffing++;
+			}
+
 			else
 				cptStuffing=0;
 
+			// Si on doit stocker le bit actuel dans le nouveau tableau
 			if (stock)
 			{
+				// Décalage différent en fonction de l'emplacement de chaque cpt de bit.
+				// Il arrive que le cpt de bit du tab de base ait une valeur plus petite que celui du newTab
+				// car il a un caractere d'avance. En effet, dans newTab on a les bits de stuffing en moins
 				if (j>cptBit)
-					newTab[cptChar] |= ((frameCAN[i] & (0b10000000 >> j)) << (abs(j-cptBit)));
+					*(newTab+cptChar) |= (( (*(frameCAN+i)) & (0b10000000 >> j)) << (abs(j-cptBit)));
 				else
-					newTab[cptChar] |= ((frameCAN[i] & (0b10000000 >> j)) >> (abs(j-cptBit)));
+					*(newTab+cptChar) |= (( (*(frameCAN+i)) & (0b10000000 >> j)) >> (abs(j-cptBit)));
 
+				// Incrementation des cpt de bit
 				if(cptBit == 7)
 				{
 					cptChar++;
@@ -408,28 +512,110 @@ uint8_t FrameDestuff(uint8_t frameCAN[])
 					cptBit++;
 			}
 
-
 			// Test sur le compteur du stuffing
 			if (cptStuffing == 4)
 				stock = 0; // Prochaine valeur = bitstuffing -> on ne la conserve pas
-			else
+			else if (cptStuffing < 4)
 				stock = 1;
+			else
+			// Une erreur de stuffing a eu lieu, c'est-a-dire qu'il y a eu un 0 après des 0 ou un 1 après des 1
+			// On envoie un rapport d'erreur, on remet a 0 le cpt et on stocke la valeur suivante
+			{
+				ErrorReport |= STUFFING_ERROR;
+				cptStuffing = 0;
+				stock = 1;
+			}
 
-			bitPre = ((frameCAN[i] & (0b10000000 >> j)) >> (7-j));
+			// Mise a jour de la valeur du bit precedent
+			bitPre = (( (*(frameCAN+i)) & (0b10000000 >> j)) >> (7-j));
 		}
 	}
-	// On retourne quoi ?! Soit le tableau "valide", soit un
-	return 0;
 }
 
-void FrameRead(uint8_t tab)
+
+
+
+/* _____________________________________________________________________________________________*/
+// Fonction de mise en forme de la trame reçue
+// Après destuffing, la trame est rangée dans un tableau
+// Cette fonction permet d'ordonner les différents éléments de la trame dans une structure
+uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct)
 {
+	uint8_t dlcO; 							// dlcBits et dlcOctets
+	uint8_t ErrorReport = 0; 				// Rapport d'erreur
 
+	// Traitement DLC pour remplir la structure
+	dlcO = ((tab[1] & M_DLC0) << 3) | ((tab[2] & M_DLC1) >> 5);
+
+	// RAZ du tableau de la structure
+	for (int i = 0 ; i < TAILLE_MAX_UNSTUFFED ; i++)
+	{
+		frameStruct->frame_tab[i] = 0;
+	}
+
+	for (int i = 0 ; i < TAILLE_MAX_UNSTUFFED ; i++)
+	{
+		// Correspond à la case 2 contenant 3bits DLC et (soit 5 bits DATA, soit 5 bits CRC)
+		// et à la dernière case Data + début CRC en fonction de dlcO
+		if (i==(2+dlcO))
+		{
+			frameStruct->frame_tab[i] = (tab[i]&(~0x1F));
+			frameStruct->frame_tab[i+(8-dlcO)] = (tab[i]&0x1F);
+		}
+
+		// Correspond aux deux dernières cases, qui changent
+		// de place en fonction de dlcO
+		else if (i>(2+dlcO))
+			frameStruct->frame_tab[i+(8-dlcO)] = tab[i];
+
+		// Cas "normal" (début), ne change jamais
+		else
+			frameStruct->frame_tab[i] = tab[i];
+	}
+	// On retourne les erreurs
+	return ErrorReport;
 }
 
-// FrameStuffing()
 
-// FrameDestuffing()
+/*_______________________________________________________________________________________________*/
+// Fonction de gestion des erreurs de trame
+void ErrorManagement(frame_t * frameStruct, uint8_t errorreport, UART_HandleTypeDef huart)
+{
+	if((errorreport && 0x01) == 0x01)
+	{
+		// La trame possède une erreur de stuffing
+	}
+	else if((errorreport && 0x04) == 0x04)
+	{
+		// La trame possède une erreur de forme
+	}
+	else if((errorreport && 0x10) == 0x10)
+	{
+		// La trame possède une erreur de CRC
+	}
+}
+
+
+/*__________________________________________________________________________________*/
+// Send a character on UART
+void UART_SendChar(UART_HandleTypeDef huart, uint8_t data)
+{
+	while((USART2->SR & FLAG_TXE) == 0);
+	//huart.Instance->DR = data;
+	USART2->DR = data;
+}
+
+/*___________________________________________________________________________________*/
+// Send a string on UART
+void UART_SendString(UART_HandleTypeDef huart, char *p)
+{
+	while(*p != 0)
+	{
+		UART_SendChar(huart,*p);
+		p++;
+	}
+}
+
 
 // Init NVIC
 void NVIC_Init(void)
