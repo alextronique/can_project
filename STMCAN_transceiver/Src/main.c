@@ -70,9 +70,11 @@ void NVIC_Init(void);
 /* Private function prototypes -----------------------------------------------*/
 uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab);
 uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct);
-void ErrorManagement(frame_t * frameStruct, uint8_t errorreport, UART_HandleTypeDef huart);
+void ErrorManagement(frame_t * frameStruct, uint8_t errorReport, UART_HandleTypeDef huart);
 void UART_SendChar(UART_HandleTypeDef huart, uint8_t data);
 void UART_SendString(UART_HandleTypeDef huart, char *p);
+uint16_t CAN_execCrc(uint16_t crc, uint8_t data);
+void canTrameTransfo(uint8_t* trame, uint8_t* res, uint8_t size);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -108,6 +110,7 @@ int main(void)
   /* Private variables ----------------------------------------------------------*/
 	// Structure de la trame
 	static frame_t frameStruct;
+	static uint8_t crcTab[256];
 
 	// Tableau de test
 	uint8_t tmpTab[TAILLE_MAX_STUFFED] =
@@ -133,8 +136,6 @@ int main(void)
 
 	uint8_t errorReport = 0;
 
-	uint8_t tmp=0;
-
 	// Tableau destuffé
 	static uint8_t unstuffTab[TAILLE_MAX_UNSTUFFED] = {0};
   /* USER CODE END 1 */
@@ -157,8 +158,8 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_TIM1_Init();
-  MX_TIM2_Init();
+  /*MX_TIM1_Init();
+  MX_TIM2_Init();*/
   MX_USART2_UART_Init();
 
 
@@ -170,14 +171,34 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  UART_SendString(huart2, "Demarrage du sniffing CAN");
+  //Demarrage du sniffing CAN
+  UART_SendString(huart2, "\nDemarrage du sniffing CAN");
 
-
+  //Destuffing de la trame
   errorReport |= FrameDestuff(tmpTab2, unstuffTab);
+
+  //Traitement de la trame destuffée
   errorReport |= FrameRead(unstuffTab, &frameStruct);
 
 
-  tmp++;
+  /* Transformation de la trame pour le calcul du CRC */
+  uint8_t DLC = 0;
+  uint8_t frameSize = 0;
+  uint16_t crc = 0;
+
+  DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
+  //frameSize = (6+DLC)-1;
+  frameSize = (DLC*8)+19;
+
+  //canTrameTransfo(unstuffTab, crcTab, frameSize);
+  for(int i = 0; i < frameSize+1; i++)
+  {
+      crc = CAN_execCrc(crc, unstuffTab[i]);
+  }
+
+  //Affichage des erreurs
+  ErrorManagement(&frameStruct, errorReport, huart2);
+
 
   // Gestion des erreurs
   // Lecture des "return" avec masques
@@ -337,7 +358,6 @@ static void MX_USART2_UART_Init(void)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
-
 }
 
 /** Configure pins as 
@@ -530,6 +550,7 @@ uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 			bitPre = (( (*(frameCAN+i)) & (0b10000000 >> j)) >> (7-j));
 		}
 	}
+	return 0;
 }
 
 
@@ -577,35 +598,50 @@ uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct)
 }
 
 
-/*_______________________________________________________________________________________________*/
+/*______________________________________________________________________________________________*/
 // Fonction de gestion des erreurs de trame
-void ErrorManagement(frame_t * frameStruct, uint8_t errorreport, UART_HandleTypeDef huart)
+void ErrorManagement(frame_t * frameStruct, uint8_t errorReport, UART_HandleTypeDef huart)
 {
-	if((errorreport && 0x01) == 0x01)
+	if((errorReport & 0x01) == 0x01)
 	{
 		// La trame possède une erreur de stuffing
+		UART_SendString(huart, "\nCode erreur : ");
+		UART_SendChar(huart, errorReport);
+		UART_SendString(huart, "\nErreur de sniffing\n");
 	}
-	else if((errorreport && 0x04) == 0x04)
+	if((errorReport & 0x04) == 0x04)
 	{
 		// La trame possède une erreur de forme
+		UART_SendString(huart, "\nCode erreur : ");
+		UART_SendChar(huart, errorReport);
+		UART_SendString(huart, "\nErreur de forme\n");
 	}
-	else if((errorreport && 0x10) == 0x10)
+	if((errorReport & 0x10) == 0x10)
 	{
 		// La trame possède une erreur de CRC
+		UART_SendString(huart, "\nCode erreur : ");
+		UART_SendChar(huart, errorReport);
+		UART_SendString(huart, "\nErreur de CRC\n");
+	}
+	if(errorReport == 0x00)
+	{
+		//La trame ne possède aucune erreur
+		UART_SendString(huart, "\nCode erreur : ");
+		UART_SendChar(huart, errorReport);
+		UART_SendString(huart, "Aucune erreur\n");
 	}
 }
 
 
-/*__________________________________________________________________________________*/
+/*______________________________________________________________________________________________*/
 // Send a character on UART
 void UART_SendChar(UART_HandleTypeDef huart, uint8_t data)
 {
-	while((USART2->SR & FLAG_TXE) == 0);
-	//huart.Instance->DR = data;
-	USART2->DR = data;
+	while((huart.Instance->SR & FLAG_TXE) == 0);
+	huart.Instance->DR = data;
 }
 
-/*___________________________________________________________________________________*/
+/*______________________________________________________________________________________________*/
 // Send a string on UART
 void UART_SendString(UART_HandleTypeDef huart, char *p)
 {
@@ -617,6 +653,41 @@ void UART_SendString(UART_HandleTypeDef huart, char *p)
 }
 
 
+/*_________________________________________________________________________*/
+/* Calculate the CRC of the frame */
+uint16_t CAN_execCrc(uint16_t crc, uint8_t data)
+{
+	uint8_t i;
+	uint16_t poly;
+
+	poly = 0xc599;
+
+	crc ^= (uint16_t)data << 7; //On applique un XOR sur le crc et la data décalé de 7.
+
+	for (i = 0; i < 8; i++) {
+		crc <<= 1; 				// Décalage à gauche.
+		if (crc & 0x8000) { 	// On décale à gauche jusqu'a ce que un ET du mask et du CRC soit égale à 1.
+			crc ^= poly; 		// Valeur du polynome avec X = 2;
+		}
+	}
+	return crc & 0x7fff; 		// Utilisation d'un masque pour ne récupérer que les 15bits
+}
+
+
+/*__________________________________________________________________________________________________*/
+/* Create a frame to calculate CRC */
+void canTrameTransfo(uint8_t* trame, uint8_t* res, uint8_t size)
+{
+    int i;
+
+    for(i = 0; i < size+1; i++)
+        res[i] = ((trame[i-2] << 3) & 0xF8) | ((trame[i-1] >> 5));
+
+    res[0] = 0;
+    res[1] = (trame[0] >> 5);
+}
+
+/*______________________________________________________________________________________________*/
 // Init NVIC
 void NVIC_Init(void)
 {
