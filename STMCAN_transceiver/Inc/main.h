@@ -81,8 +81,8 @@
 #define M_RTR		0x08	// Case 1
 #define M_R0		0x04	// Case 1
 #define M_R1		0x02	// Case 1
-#define M_DLC0	0x01	// Case 1
-#define M_DLC1	0xE0	// Case 2
+#define M_DLC0	0x01		// Case 1
+#define M_DLC1	0xE0		// Case 2
 
 /*#define DATA0	0x1F	// Case 2
 #define DATA1	0xFF	// Case 3
@@ -93,10 +93,8 @@
 #define DATA6	0xFF	// Case 8
 #define DATA7	0xFF	// Case 9
 #define DATA8	0xE0	// Case 10
-#define CRC0
-#define CRC1
-#define CRC2
 #define ACK*/
+
 
 #define STUFFING_ERROR 	0x01
 #define ACK_ERROR		0x02

@@ -70,6 +70,8 @@ void NVIC_Init(void);
 /* Private function prototypes -----------------------------------------------*/
 uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab);
 uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct);
+uint8_t calculateCRC(frame_t frameStruct, uint8_t * unstuffTab);
+uint8_t ErrorDetection(frame_t * frame);
 void ErrorManagement(frame_t * frameStruct, uint8_t errorReport, UART_HandleTypeDef huart);
 void UART_SendChar(UART_HandleTypeDef huart, uint8_t data);
 void UART_SendString(UART_HandleTypeDef huart, char *p);
@@ -110,48 +112,36 @@ int main(void)
   /* Private variables ----------------------------------------------------------*/
 	// Structure de la trame
 	static frame_t frameStruct;
-	static uint8_t crcTab[256];
 
-	// Tableau de test
-	uint8_t tmpTab[TAILLE_MAX_STUFFED] =
-	{		0xFB, 0x41, 0xDA, 0x1F, 0x01, 0xF2, 0xFF, 0x04, 0x1A, 0xC6,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+	//Trame sans erreur
+	static uint8_t tmpTabPerfect[TAILLE_MAX_STUFFED] =
+	{
+			0x61, 0x60, 0xCF, 0xA1, 0xBE, 0x28, 0x2C, 0xBA, 0x5E, 0xFF,
+			0xE0
 	};
 
-
-
-	//Trame sans erreur de stuffing
-
+	//Trame avec erreur de CRC - CRC dans la trame != CRC calculé
+	static uint8_t tmpTabCrcError[TAILLE_MAX_STUFFED] =
+	{
+			0x61, 0x60, 0xCF, 0xA1, 0xBE, 0x28, 0x2D, 0xAF, 0xAB, 0x0A,
+			0xF0
+	};
 
 	//Trame avec erreur de stuffing - 6bits de même valeur a la suite
-	uint8_t tmpTab2[TAILLE_MAX_STUFFED] =
-	{		0x1F, 0x51, 0x50, 0x77, 0xF2, 0xDC, 0xDF, 0x14, 0x79, 0xF1,
-			0x0A, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00
-	};
-
-	uint8_t tmpTab3[TAILLE_MAX_STUFFED] =
+	static uint8_t tmpTabStuffingError[TAILLE_MAX_STUFFED] =
 	{
-			0x1F, 0x50, 0x68, 0x3B, 0xE9, 0x6E, 0x6F, 0x8A, 0x3C, 0xF8, 0x85, 0x78
+			0x61, 0x60, 0x4F, 0xA1, 0xBE, 0x28, 0x2C, 0xBA, 0x5E, 0xFF,
+			0xE0
 	};
-
-	uint8_t tmpTab4[TAILLE_MAX_STUFFED] =
-	{
-			0x50, 0x60, 0x7F, 0x86, 0xF9, 0x40
-	};
-
-	uint8_t tmpTab4[TAILLE_MAX_STUFFED] =
-	{
-
-	};
-	uint8_t tmpCRC[]={0x00, 0x90, 0x52, 0x12, 0x0};
-	uint8_t tmpCRC2[] = {0x00, 0x91, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0};
-
 
 	//Trame avec erreur de forme
+	static uint8_t tmpTabFormError[TAILLE_MAX_STUFFED] =
+	{
+			0xE1, 0x60, 0xCF, 0xA1, 0xBE, 0x28, 0x2C, 0xBA, 0x5E, 0xFF,
+			0xE0
+	};
 
-	//Trame avec erreur de bit
-
-	//Trame avec erreur de CRC
 
 	uint8_t errorReport = 0;
 
@@ -190,37 +180,35 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   //Demarrage du sniffing CAN
   UART_SendString(huart2, "\nDemarrage du sniffing CAN");
 
   //Destuffing de la trame
-  errorReport |= FrameDestuff(tmpTab3, unstuffTab);
+  errorReport |= FrameDestuff(tmpTabFormError, unstuffTab);
 
   //Traitement de la trame destuffée
   errorReport |= FrameRead(unstuffTab, &frameStruct);
 
+  //Calcul du CRC
+  errorReport |= calculateCRC(frameStruct, unstuffTab);
 
-  /* Transformation de la trame pour le calcul du CRC */
-  uint8_t DLC = 0;
-  uint8_t frameSizeOctet = 0;
-  uint16_t crc = 0;
-
-  DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
-  //frameSizeOctet = 3+DLC;
-
-  frameSizeOctet = 6;
-
-
-  //canTrameTransfo(tmpCRC2, crcTab, frameSizeOctet);
-  canTrameTransfo(tmpTab4, crcTab, frameSizeOctet);
-  for(int i = 0; i < frameSizeOctet+1; i++)
-  {
-      crc = CAN_execCrc(crc, crcTab[i]);
-  }
 
   //Affichage des erreurs
   ErrorManagement(&frameStruct, errorReport, huart2);
 
+
+  // Calcul du CRC a partir des datas
+  /*uint8_t frameSizeOct = 0;
+  uint16_t crc=0;
+
+  frameSizeOct = 7;
+
+  canTrameTransfo(tmpTab4, crcTab, frameSizeOct);
+  for(int i = 0; i < frameSizeOct+1; i++)
+  {
+	  crc = CAN_execCrc(crc, crcTab[i]);
+  }*/
 
   // Gestion des erreurs
   // Lecture des "return" avec masques
@@ -450,7 +438,7 @@ static void MX_GPIO_Init(void)
 // Fonction permettant de récupérer un tableau de char provenant								//
 // de l'échantillonnage, ou les bits sont rangés à la volée										//
 // On veut déstuffer cette trame, afin de l'identifier comme									//
-// valide ou non, et trier les données															//
+// valide ou non, et trier les données
 uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 {
 	// Pour gérer le destuffing, on a besoin d'un compteur
@@ -462,7 +450,7 @@ uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 	uint8_t stock = 1;		// Indique si la prochaine valeur est a stocker ou a destuffer
 	uint8_t cptChar = 0;	// Compteur de caractères
 	uint8_t cptBit = 0;		// Compteur de bits
-	uint8_t ErrorReport = 0;// Rapport d'erreur
+	uint8_t errorReport = 0;// Rapport d'erreur
 	uint8_t dlcO = 0;
 	int k=0, l=0;
 
@@ -515,7 +503,7 @@ uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 						}
 					}
 					// Sortie de la fonction
-					return ErrorReport;
+					return errorReport;
 				}
 
 			}
@@ -563,7 +551,7 @@ uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 			// Une erreur de stuffing a eu lieu, c'est-a-dire qu'il y a eu un 0 après des 0 ou un 1 après des 1
 			// On envoie un rapport d'erreur, on remet a 0 le cpt et on stocke la valeur suivante
 			{
-				ErrorReport |= STUFFING_ERROR;
+				errorReport |= STUFFING_ERROR;
 				cptStuffing = 0;
 				stock = 1;
 			}
@@ -585,7 +573,7 @@ uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct)
 {
 	uint8_t dlcO; 							// dlcBits et dlcOctets
-	uint8_t ErrorReport = 0; 				// Rapport d'erreur
+	uint8_t errorReport = 0; 				// Rapport d'erreur
 
 	// Traitement DLC pour remplir la structure
 	dlcO = ((tab[1] & M_DLC0) << 3) | ((tab[2] & M_DLC1) >> 5);
@@ -615,13 +603,16 @@ uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct)
 		else
 			frameStruct->frame_tab[i] = tab[i];
 	}
+
 	// On retourne les erreurs
-	return ErrorReport;
+	errorReport = ErrorDetection(frameStruct);
+	return errorReport;
 }
 
 
+
 /*______________________________________________________________________________________________*/
-// Fonction de gestion des erreurs de trame
+// Fonction de gestion d'affichage des erreurs de trame
 void ErrorManagement(frame_t * frameStruct, uint8_t errorReport, UART_HandleTypeDef huart)
 {
 	if((errorReport & 0x01) == 0x01)
@@ -652,6 +643,62 @@ void ErrorManagement(frame_t * frameStruct, uint8_t errorReport, UART_HandleType
 		UART_SendChar(huart, errorReport);
 		UART_SendString(huart, "Aucune erreur\n");
 	}
+}
+
+
+
+/*______________________________________________________________________________________________*/
+// Fonction de calcul et de comparaison du CRC
+uint8_t calculateCRC(frame_t frameStruct, uint8_t * unstuffTab)
+{
+	  uint8_t DLC = 0;
+	  uint8_t frameSizeOctet = 0;
+	  uint16_t crc = 0;
+	  uint8_t crcTab[256];
+	  uint16_t crcUnstuffTab = 0;
+	  uint8_t errorReport = 0;
+
+	  DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
+	  frameSizeOctet = 3+DLC;
+
+	  canTrameTransfo(unstuffTab, crcTab, frameSizeOctet);
+	  for(int i = 0; i < frameSizeOctet+1; i++)
+	  {
+	      crc = CAN_execCrc(crc, crcTab[i]);
+	  }
+
+	  crcUnstuffTab = ( (frameStruct.bits.CRC_1 << 11) + (((frameStruct.bits.CRC_2 << 5) | frameStruct.bits.CRC_3) << 3) + (frameStruct.bits.CRC_4 & 0x06) ) >> 1;
+
+	  if(crcUnstuffTab != crc)
+		  errorReport |= CRC_ERROR;
+
+	  return errorReport;
+}
+
+
+
+/*______________________________________________________________________________________________*/
+// Fonction de detection d'erreur d'une trame
+uint8_t ErrorDetection(frame_t * frame)
+{
+	uint8_t errorReport = 0;
+	uint8_t delimAck = 0;
+	uint8_t delimCRC = 0;
+	uint8_t interTrame = 0;
+	uint8_t EndOfFrame = 0;
+	delimAck = frame->bits.ACK & 0x01;
+	delimCRC = frame->bits.CRC_4 & 0x01;
+	interTrame = frame->bits.INTER & 0x07;
+	EndOfFrame = (frame->bits.END_OF_FRAME_H << 4) | frame->bits.END_OF_FRAME_L;
+
+
+	if( (frame->bits.SOF != 0) || (frame->bits.R0 != 0) || (frame->bits.R1 != 0) ||
+			(frame->bits.RTR != 0) || (delimAck != 1) || (delimCRC != 1) || (interTrame != 0x07)
+			|| (EndOfFrame != 0x7F) )
+		errorReport |= FORM_ERROR;
+
+
+	return errorReport;
 }
 
 
