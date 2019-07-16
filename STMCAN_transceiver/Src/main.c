@@ -119,16 +119,33 @@ int main(void)
 	};
 
 
+
 	//Trame sans erreur de stuffing
 
 
 	//Trame avec erreur de stuffing - 6bits de même valeur a la suite
 	uint8_t tmpTab2[TAILLE_MAX_STUFFED] =
-	{		0x9F, 0x51, 0x50, 0x77, 0xF2, 0xDC, 0xDF, 0x14, 0x79, 0xF1,
+	{		0x1F, 0x51, 0x50, 0x77, 0xF2, 0xDC, 0xDF, 0x14, 0x79, 0xF1,
 			0x0A, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00
 	};
 
-	uint8_t tmpCRC[]={0x00, 0x04, 0x92, 0x90, 0x90};
+	uint8_t tmpTab3[TAILLE_MAX_STUFFED] =
+	{
+			0x1F, 0x50, 0x68, 0x3B, 0xE9, 0x6E, 0x6F, 0x8A, 0x3C, 0xF8, 0x85, 0x78
+	};
+
+	uint8_t tmpTab4[TAILLE_MAX_STUFFED] =
+	{
+			0x50, 0x60, 0x7F, 0x86, 0xF9, 0x40
+	};
+
+	uint8_t tmpTab4[TAILLE_MAX_STUFFED] =
+	{
+
+	};
+	uint8_t tmpCRC[]={0x00, 0x90, 0x52, 0x12, 0x0};
+	uint8_t tmpCRC2[] = {0x00, 0x91, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0};
+
 
 	//Trame avec erreur de forme
 
@@ -177,7 +194,7 @@ int main(void)
   UART_SendString(huart2, "\nDemarrage du sniffing CAN");
 
   //Destuffing de la trame
-  errorReport |= FrameDestuff(tmpTab2, unstuffTab);
+  errorReport |= FrameDestuff(tmpTab3, unstuffTab);
 
   //Traitement de la trame destuffée
   errorReport |= FrameRead(unstuffTab, &frameStruct);
@@ -186,16 +203,16 @@ int main(void)
   /* Transformation de la trame pour le calcul du CRC */
   uint8_t DLC = 0;
   uint8_t frameSizeOctet = 0;
-  uint8_t frameSizeBit = 0;
   uint16_t crc = 0;
 
-  //DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
-  //frameSizeOctet = (6+DLC)-1;
-  //frameSizeBit = ((DLC*8)+19-1);
+  DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
+  //frameSizeOctet = 3+DLC;
 
-  frameSizeBit = 34;
-  frameSizeOctet = 5;
-  canTrameTransfo(tmpCRC, crcTab, frameSizeBit);
+  frameSizeOctet = 6;
+
+
+  //canTrameTransfo(tmpCRC2, crcTab, frameSizeOctet);
+  canTrameTransfo(tmpTab4, crcTab, frameSizeOctet);
   for(int i = 0; i < frameSizeOctet+1; i++)
   {
       crc = CAN_execCrc(crc, crcTab[i]);
