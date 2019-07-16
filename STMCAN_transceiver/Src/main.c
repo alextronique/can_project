@@ -128,6 +128,8 @@ int main(void)
 			0x0A, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00
 	};
 
+	uint8_t tmpCRC[]={0x00, 0x04, 0x92, 0x90, 0x90};
+
 	//Trame avec erreur de forme
 
 	//Trame avec erreur de bit
@@ -183,17 +185,20 @@ int main(void)
 
   /* Transformation de la trame pour le calcul du CRC */
   uint8_t DLC = 0;
-  uint8_t frameSize = 0;
+  uint8_t frameSizeOctet = 0;
+  uint8_t frameSizeBit = 0;
   uint16_t crc = 0;
 
-  DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
-  //frameSize = (6+DLC)-1;
-  frameSize = (DLC*8)+19;
+  //DLC |= ( (frameStruct.bits.DLCH << 3) | (frameStruct.bits.DLCL) );
+  //frameSizeOctet = (6+DLC)-1;
+  //frameSizeBit = ((DLC*8)+19-1);
 
-  //canTrameTransfo(unstuffTab, crcTab, frameSize);
-  for(int i = 0; i < frameSize+1; i++)
+  frameSizeBit = 34;
+  frameSizeOctet = 5;
+  canTrameTransfo(tmpCRC, crcTab, frameSizeBit);
+  for(int i = 0; i < frameSizeOctet+1; i++)
   {
-      crc = CAN_execCrc(crc, unstuffTab[i]);
+      crc = CAN_execCrc(crc, crcTab[i]);
   }
 
   //Affichage des erreurs
