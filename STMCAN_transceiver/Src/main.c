@@ -143,6 +143,40 @@ int main(void)
 	};
 
 
+	//Trame sans erreur
+	static uint8_t tmpTabPerfect2[TAILLE_MAX_STUFFED] =
+	{
+			0x16, 0xA1, 0x07, 0x2B, 0x41, 0xB6, 0xBE, 0x41, 0xDB, 0xD7,
+			0x5A, 0x2B, 0x7D, 0x7F, 0xF0
+	};
+
+	//Trame avec erreur de CRC - CRC dans la trame != CRC calculé
+	static uint8_t tmpTabCrcError2[TAILLE_MAX_STUFFED] =
+	{
+			0x16, 0xA1, 0x07, 0x2B, 0x41, 0xB6, 0xBE, 0x41, 0xDB, 0xD7,
+			0x5A, 0x2A, 0x7D, 0x7F, 0xF0
+	};
+
+	//Trame avec erreur de stuffing - 6bits de même valeur a la suite
+	static uint8_t tmpTabStuffingError2[TAILLE_MAX_STUFFED] =
+	{
+			0x16, 0xA1, 0x03, 0x2B, 0x41, 0xB6, 0xBE, 0x41, 0xDB, 0xD7,
+			0x5A, 0x2B, 0x7D, 0x7F, 0xF0
+	};
+
+	//Trame avec erreur de forme
+	static uint8_t tmpTabFormError2[TAILLE_MAX_STUFFED] =
+	{
+			0x16, 0xA1, 0x07, 0x2B, 0x41, 0xB6, 0xBE, 0x41, 0xDB, 0xD7,
+			0x5A, 0x2B, 0x7D, 0x7F, 0x70
+	};
+
+	static uint8_t tmpCRC[TAILLE_MAX_STUFFED] =
+	{
+			0xF8, 0xA0, 0x5F, 0xE2, 0x20
+	};
+
+
 	uint8_t errorReport = 0;
 
 	// Tableau destuffé
@@ -182,10 +216,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
   //Demarrage du sniffing CAN
-  UART_SendString(huart2, "\nDemarrage du sniffing CAN");
+  UART_SendString(huart2, "\r\n\nDemarrage du sniffing CAN");
 
   //Destuffing de la trame
-  errorReport |= FrameDestuff(tmpTabFormError, unstuffTab);
+  //errorReport |= FrameDestuff(tmpTabPerfect2, unstuffTab);
+  //errorReport |= FrameDestuff(tmpTabStuffingError2, unstuffTab);
+  //errorReport |= FrameDestuff(tmpTabCrcError2, unstuffTab);
+  errorReport |= FrameDestuff(tmpTabFormError2, unstuffTab);
 
   //Traitement de la trame destuffée
   errorReport |= FrameRead(unstuffTab, &frameStruct);
@@ -193,25 +230,25 @@ int main(void)
   //Calcul du CRC
   errorReport |= calculateCRC(frameStruct, unstuffTab);
 
-
   //Affichage des erreurs
   ErrorManagement(&frameStruct, errorReport, huart2);
 
+  uint8_t frameSizeOctet = 0;
+  uint16_t crc = 0;
+  uint8_t crcTab[256];
 
-  // Calcul du CRC a partir des datas
-  /*uint8_t frameSizeOct = 0;
-  uint16_t crc=0;
 
-  frameSizeOct = 7;
+  frameSizeOctet = 5;
 
-  canTrameTransfo(tmpTab4, crcTab, frameSizeOct);
-  for(int i = 0; i < frameSizeOct+1; i++)
+  canTrameTransfo(tmpCRC, crcTab, frameSizeOctet);
+  for(int i = 0; i < frameSizeOctet+1; i++)
   {
-	  crc = CAN_execCrc(crc, crcTab[i]);
-  }*/
+      crc = CAN_execCrc(crc, crcTab[i]);
+  }
 
-  // Gestion des erreurs
-  // Lecture des "return" avec masques
+
+
+
 
   while (1)
   {
@@ -472,7 +509,7 @@ uint8_t FrameDestuff(uint8_t * frameCAN, uint8_t * newTab)
 			if (cptChar == ((6+dlcO)-2))
 			{
 				// Si on dépasse aussi le bit du CRC
-				if(cptBit == 2)
+				if( (cptBit == 2) && (stock == 1) )
 				{
 					// On veut stocker les dernières cases du tableau de base dans le nouveau
 					// On refait un compteur qui repart de la case où on s'est arrêté de newTab
@@ -591,7 +628,7 @@ uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct)
 		if (i==(2+dlcO))
 		{
 			frameStruct->frame_tab[i] = (tab[i]&(~0x1F));
-			frameStruct->frame_tab[i+(8-dlcO)] = (tab[i]&0x1F);
+			frameStruct->frame_tab[i+(8-dlcO)] |= (tab[i]&0x1F);
 		}
 
 		// Correspond aux deux dernières cases, qui changent
@@ -615,33 +652,35 @@ uint8_t FrameRead(uint8_t * tab, frame_t * frameStruct)
 // Fonction de gestion d'affichage des erreurs de trame
 void ErrorManagement(frame_t * frameStruct, uint8_t errorReport, UART_HandleTypeDef huart)
 {
+	uint8_t tmpstr[50] = {0};
+
 	if((errorReport & 0x01) == 0x01)
 	{
 		// La trame possède une erreur de stuffing
-		UART_SendString(huart, "\nCode erreur : ");
-		UART_SendChar(huart, errorReport);
-		UART_SendString(huart, "\nErreur de sniffing\n");
+		sprintf(tmpstr,"\r\nCode erreur : %d", errorReport);
+		UART_SendString(huart, tmpstr);
+		UART_SendString(huart, "\r\nErreur de stuffing");
 	}
 	if((errorReport & 0x04) == 0x04)
 	{
 		// La trame possède une erreur de forme
-		UART_SendString(huart, "\nCode erreur : ");
-		UART_SendChar(huart, errorReport);
-		UART_SendString(huart, "\nErreur de forme\n");
+		sprintf(tmpstr,"\r\nCode erreur : %d", errorReport);
+		UART_SendString(huart, tmpstr);
+		UART_SendString(huart, "\r\nErreur de forme");
 	}
 	if((errorReport & 0x10) == 0x10)
 	{
 		// La trame possède une erreur de CRC
-		UART_SendString(huart, "\nCode erreur : ");
-		UART_SendChar(huart, errorReport);
-		UART_SendString(huart, "\nErreur de CRC\n");
+		sprintf(tmpstr,"\r\nCode erreur : %d", errorReport);
+		UART_SendString(huart, tmpstr);
+		UART_SendString(huart, "\r\nErreur de CRC");
 	}
 	if(errorReport == 0x00)
 	{
 		//La trame ne possède aucune erreur
-		UART_SendString(huart, "\nCode erreur : ");
-		UART_SendChar(huart, errorReport);
-		UART_SendString(huart, "Aucune erreur\n");
+		sprintf(tmpstr,"\r\nCode erreur : %d", errorReport);
+		UART_SendString(huart, tmpstr);
+		UART_SendString(huart, "\r\nAucune erreur");
 	}
 }
 
