@@ -40,6 +40,7 @@
 #include "stm32f4xx_hal.h"
 #include "stdlib.h"
 #include "string.h"
+#include "frame_control.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -96,6 +97,14 @@ void TIM2_IRQHandler(void)
 int main(void)
 {
 
+	uint8_t *p;
+
+  /* Frame creation */
+	frame_t frame1;
+
+  /* val tab corrigé */
+	frame_correct_t tab_correct;
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -128,6 +137,12 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim1);
   /* USER CODE END 2 */
 
+
+
+  /* Frame initialization */
+  tab_correct = frameControl_Initialization(&frame1);
+
+  frameControl_Bits_Stuffing(tab_correct);
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -135,7 +150,8 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-	  for(uint8_t i=0;i<200;i++);
+	  printf("SALUT\n\r");
+
   }
   /* USER CODE END 3 */
 
